@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>한라산 GPX 애니메이션 드래그 추적기</title>
+    <title>한라산 GPX 드래그 추적기</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     
@@ -21,11 +21,14 @@
         .label { font-size: 12px; color: #666; }
         .value { font-size: 18px; font-weight: bold; color: #222; }
         #status { margin-left:10px; font-size:14px; color:#007bff; font-weight: bold; }
+        /* 마커 위에 마우스를 올렸을 때 커서 모양 변경 */
+        .leaflet-marker-icon { cursor: grab !important; }
+        .leaflet-marker-icon:active { cursor: grabbing !important; }
     </style>
 </head>
 <body>
 
-    <h2>📍 한라산 경로 추적 (드래그 가능)</h2>
+    <h2>📍 한라산 경로 추적 (호버 정지 & 드래그)</h2>
 
     <div id="map"></div>
 
@@ -40,14 +43,14 @@
     <div class="info-panel">
         <div class="info-item"><span class="label">총 거리</span><span class="value"><span id="distance">0</span> km</span></div>
         <div class="info-item"><span class="label">최고 고도</span><span class="value"><span id="elevation">0</span> m</span></div>
-        <div class="info-item"><span class="label">상태</span><span class="value" id="drag-status">대기 중</span></div>
+        <div class="info-item"><span class="label">동작 상태</span><span class="value" id="drag-status">대기 중</span></div>
     </div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-gpx/1.7.0/gpx.min.js"></script>
 
     <script>
-        // MovingMarker 내장 소스 (드래그 대응 수정본)
+        // MovingMarker 내장 소스 (드래그 및 호버 대응 버전)
         L.MovingMarker = L.Marker.extend({
             initialize: function(i, t, e) {
                 L.Marker.prototype.initialize.call(this, i[0], e);
@@ -67,6 +70,7 @@
                 cancelAnimationFrame(this._animId);
             },
             _animate: function() {
+                if (this._state !== 1) return;
                 var self = this, now = performance.now();
                 var duration = Array.isArray(this._durations) ? this._durations[this._currentIndex] : this._durations / (this._latlngs.length - 1);
                 var elapsed = now - this._startTime;
@@ -91,9 +95,7 @@
                 this.setLatLng([lat, lng]);
                 this.fire('progress');
 
-                if (this._state === 1) {
-                    this._animId = requestAnimationFrame(function() { self._animate(); });
-                }
+                this._animId = requestAnimationFrame(function() { self._animate(); });
             }
         });
         L.movingMarker = function(i, t, e) { return new L.MovingMarker(i, t, e); };
@@ -128,20 +130,35 @@
         function createMovingMarker() {
             if (movingMarker) map.removeLayer(movingMarker);
             
-            // [수정] draggable: true 옵션 추가
-            movingMarker = L.movingMarker(routeCoords, 30000, { draggable: true });
+            // draggable: true를 설정하여 드래그 가능하게 함
+            movingMarker = L.movingMarker(routeCoords, 30000, { 
+                draggable: true,
+                interactive: true 
+            });
 
-            // 드래그 이벤트 핸들러
+            // 1. 마우스가 마커 위에 놓이면 멈춤 (mouseover)
+            movingMarker.on('mouseover', function() {
+                if (movingMarker._state === 1) {
+                    pauseAnimation();
+                    dragStatus.innerText = "호버 중 (일시정지)";
+                }
+            });
+
+            // 2. 드래그 이벤트 제어
             movingMarker.on('dragstart', function() {
-                pauseAnimation(); // 드래그 시작 시 애니메이션 일시정지
+                pauseAnimation();
                 dragStatus.innerText = "드래그 중...";
             });
 
+            movingMarker.on('drag', function(e) {
+                // 드래그 중 지도가 마커를 따라가게 설정
+                if (followCheckbox.checked) {
+                    map.panTo(e.target.getLatLng());
+                }
+            });
+
             movingMarker.on('dragend', function(e) {
-                const newPos = e.target.getLatLng();
-                // 가장 가까운 경로 좌표 찾기 (선택 사항: 드래그 후 경로 위에 고정시키고 싶을 때)
-                dragStatus.innerText = "드래그 완료 (위치 변경됨)";
-                if (followCheckbox.checked) map.panTo(newPos);
+                dragStatus.innerText = "드래그 완료 (정지 상태)";
             });
 
             movingMarker.on('progress', function() {
