@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>나의 GPX 경로 보기</title>
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <style>
+        #map { height: 600px; width: 100%; border-radius: 10px; }
+        .info-panel { padding: 15px; background: #f9f9f9; border: 1px solid #ddd; margin-top: 10px; border-radius: 10px; font-family: sans-serif; }
+        .info-panel span { font-weight: bold; color: #007bff; margin-right: 15px; }
+    </style>
+</head>
+<body>
+
+    <h2>🏃 나의 활동 경로</h2>
+    <div id="map"></div>
+
+    <div class="info-panel">
+        거리: <span id="distance">0</span> km | 
+        최고 고도: <span id="elevation">0</span> m | 
+        시간: <span id="duration">0</span>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-gpx/1.7.0/gpx.min.js"></script>
+
+    <script>
+        // 1. 지도 초기화 (기본 위치 설정)
+        const map = L.map('map').setView([37.5665, 126.9780], 13);
+
+        // 2. 배경 지도 타일 설정 (OpenStreetMap)
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(map);
+
+        // 3. GPX 파일 로드
+        // 'your-track.gpx' 부분을 실제 파일 경로로 수정하세요.
+        const gpxFile = 'Nepal_day1_20161015.gpx'; 
+
+        new L.GPX(gpxFile, {
+            async: true,
+            marker_options: {
+                startIconUrl: 'https://cdn.rawgit.com/mpetazzoni/leaflet-gpx/master/pin-icon-start.png',
+                endIconUrl: 'https://cdn.rawgit.com/mpetazzoni/leaflet-gpx/master/pin-icon-end.png',
+                shadowUrl: 'https://cdn.rawgit.com/mpetazzoni/leaflet-gpx/master/pin-shadow.png'
+            },
+            polyline_options: {
+                color: 'red',
+                opacity: 0.75,
+                weight: 5,
+                lineCap: 'round'
+            }
+        }).on('loaded', function(e) {
+            const gpx = e.target;
+            // 지도 범위를 경로에 맞게 자동으로 조절
+            map.fitBounds(gpx.getBounds());
+
+            // 정보 업데이트 (단위 변환 등)
+            document.getElementById('distance').innerText = (gpx.get_distance() / 1000).toFixed(2);
+            document.getElementById('elevation').innerText = gpx.get_elevation_max().toFixed(0);
+            document.getElementById('duration').innerText = gpx.get_duration_string(gpx.get_total_time());
+        }).addTo(map);
+    </script>
+</body>
+</html>
