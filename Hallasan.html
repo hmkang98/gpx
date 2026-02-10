@@ -82,7 +82,10 @@
             document.getElementById('distance').innerText = (gpx.get_distance() / 1000).toFixed(2);
             document.getElementById('elevation').innerText = gpx.get_elevation_max().toFixed(0);
             document.getElementById('duration').innerText = gpx.get_duration_string(gpx.get_total_time());
-
+            document.getElementById('min-elevation').innerText = gpx.get_elevation_min().toFixed(0);
+            document.getElementById('moving-time').innerText = gpx.get_duration_string(gpx.get_moving_time());
+            const restTimeMs = gpx.get_total_time() - gpx.get_moving_time();
+            document.getElementById('rest-time').innerText = gpx.get_duration_string(restTimeMs);
             // 경로 데이터만 추출
             gpx.eachLayer(function collect(layer) {
                 if (layer instanceof L.Polyline) {
