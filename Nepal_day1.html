@@ -42,8 +42,6 @@
         <div class="info-item"><span class="label">최고 고도</span><span class="value"><span id="elevation">0</span>m</span></div>
         <div class="info-item"><span class="label">최소 고도</span><span class="value"><span id="min-elevation">0</span>m</span></div>
         <div class="info-item"><span class="label">소요 시간</span><span class="value"><span id="duration">0</span></span></div>
-        <div class="info-item"><span class="label">이동 시간</span><span class="value"><span id="moving-time">00:00</span></span></div>
-        <div class="info-item"><span class="label">휴식 시간</span><span class="value"><span id="rest-time">00:00</span></span></div>
     </div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -83,9 +81,6 @@
             document.getElementById('elevation').innerText = gpx.get_elevation_max().toFixed(0);
             document.getElementById('duration').innerText = gpx.get_duration_string(gpx.get_total_time());
             document.getElementById('min-elevation').innerText = gpx.get_elevation_min().toFixed(0);
-            document.getElementById('moving-time').innerText = gpx.get_duration_string(gpx.get_moving_time());
-            const restTimeMs = gpx.get_total_time() - gpx.get_moving_time();
-            document.getElementById('rest-time').innerText = gpx.get_duration_string(restTimeMs);
             // 경로 데이터만 추출
             gpx.eachLayer(function collect(layer) {
                 if (layer instanceof L.Polyline) {
