@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPX 애니메이션 대시보드</title>
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <style>
+        body { font-family: 'Malgun Gothic', sans-serif; margin: 20px; background: #f4f4f4; }
+        h2 { color: #333; }
+        #map { height: 500px; width: 100%; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        
+        .controls { margin-top: 15px; display: flex; gap: 10px; align-items: center; }
+        button { 
+            padding: 10px 20px; border: none; border-radius: 5px; 
+            background: #007bff; color: white; cursor: pointer; font-weight: bold; 
+        }
+        button:hover { background: #0056b3; }
+        
+        .info-panel { 
+            margin-top: 15px; padding: 15px; background: white; 
+            border-radius: 8px; border: 1px solid #ddd; display: flex; gap: 20px;
+        }
+        .info-item { display: flex; flex-direction: column; }
+        .label { font-size: 12px; color: #666; }
+        .value { font-size: 18px; font-weight: bold; color: #222; }
+    </style>
+</head>
+<body>
+
+    <h2>📍 GPX 경로 추적기</h2>
+
+    <div id="map"></div>
+
+    <div class="controls">
+        <button onclick="startAnimation()">▶ 이동 시작</button>
+        <button onclick="pauseAnimation()" style="background:#6c757d;">⏸ 일시정지</button>
+        <label><input type="checkbox" id="followMe" checked> 마커 따라가기</label>
+    </div>
+
+    <div class="info-panel">
+        <div class="info-item">
+            <span class="label">총 거리</span>
+            <span class="value"><span id="distance">0</span> km</span>
+        </div>
+        <div class="info-item">
+            <span class="label">최고 고도</span>
+            <span class="value"><span id="elevation">0</span> m</span>
+        </div>
+        <div class="info-item">
+            <span class="label">소요 시간</span>
+            <span class="value"><span id="duration">0</span></span>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-gpx/1.7.0/gpx.min.js"></script>
+    <script src="https://rawcdn.githack.com/ewoken/Leaflet.MovingMarker/master/MovingMarker.js"></script>
+
+    <script>
+        // 1. 지도 설정
+        const map = L.map('map').setView([37.5665, 126.9780], 13);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap'
+        }).addTo(map);
+
+        let movingMarker;
+        const followCheckbox = document.getElementById('followMe');
+
+        // 2. GPX 로드 및 처리
+        // 'your-track.gpx' 파일명을 실제 파일명으로 바꾸세요!
+        const gpxFile = 'Hanllasan_20190605.gpx'; 
+
+        const gpxLayer = new L.GPX(gpxFile, {
+            async: true,
+            marker_options: {
+                startIconUrl: 'https://cdn.rawgit.com/mpetazzoni/leaflet-gpx/master/pin-icon-start.png',
+                endIconUrl: 'https://cdn.rawgit.com/mpetazzoni/leaflet-gpx/master/pin-icon-end.png',
+                shadowUrl: 'https://cdn.rawgit.com/mpetazzoni/leaflet-gpx/master/pin-shadow.png'
+            },
+            polyline_options: { color: '#007bff', opacity: 0.6, weight: 5 }
+        }).on('loaded', function(e) {
+            const gpx = e.target;
+            map.fitBounds(gpx.getBounds());
+
+            // 상단 정보 업데이트
+            document.getElementById('distance').innerText = (gpx.get_distance() / 1000).toFixed(2);
+            document.getElementById('elevation').innerText = gpx.get_elevation_max().toFixed(0);
+            document.getElementById('duration').innerText = gpx.get_duration_string(gpx.get_total_time());
+
+            // 애니메이션 좌표 추출 (전체 경로 위경도 배열)
+            const coords = gpx.getLayers()[0].getLatLngs();
+            
+            // 3. MovingMarker 생성 (전체 이동 시간을 15초로 설정)
+            movingMarker = L.movingMarker(coords, 15000, {
+                autostart: false,
+                loop: false
+            });
+
+            // 마커가 움직일 때마다 카메라 이동 여부 확인
+            movingMarker.on('progress', function() {
+                if (followCheckbox.checked) {
+                    map.panTo(movingMarker.getLatLng());
+                }
+            });
+
+            movingMarker.addTo(map);
+        }).addTo(map);
+
+        // 제어 함수
+        function startAnimation() {
+            if (movingMarker) movingMarker.start();
+        }
+
+        function pauseAnimation() {
+            if (movingMarker) movingMarker.pause();
+        }
+    </script>
+</body>
+</html>
