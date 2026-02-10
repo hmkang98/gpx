@@ -10,7 +10,7 @@
     <style>
         body { font-family: 'Malgun Gothic', sans-serif; margin: 20px; background: #f4f4f4; }
         h2 { color: #333; }
-        #map { height: 500px; width: 100%; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        #map { height: 500px; width: 100%; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); border: 1px solid #ddd; }
         .controls { margin-top: 15px; display: flex; gap: 10px; align-items: center; }
         button { padding: 10px 20px; border: none; border-radius: 5px; background: #007bff; color: white; cursor: pointer; font-weight: bold; }
         button:hover { background: #0056b3; }
@@ -18,11 +18,12 @@
         .info-item { display: flex; flex-direction: column; }
         .label { font-size: 12px; color: #666; }
         .value { font-size: 18px; font-weight: bold; color: #222; }
+        #status { margin-left:10px; font-size:14px; color:#007bff; font-weight: bold; }
     </style>
 </head>
 <body>
 
-    <h2>📍 한라산 경로 추적기</h2>
+    <h2>📍 한라산 경로 실시간 추적</h2>
 
     <div id="map"></div>
 
@@ -30,7 +31,7 @@
         <button onclick="startAnimation()">▶ 이동 시작</button>
         <button onclick="pauseAnimation()" style="background:#6c757d;">⏸ 일시정지</button>
         <label><input type="checkbox" id="followMe" checked> 마커 따라가기</label>
-        <span id="status" style="margin-left:10px; font-size:14px; color:#007bff;">파일 로딩 중...</span>
+        <span id="status">GPX 로딩 중...</span>
     </div>
 
     <div class="info-panel">
@@ -44,50 +45,88 @@
 
     <script>
         /**
-         * [오류 수정] L.movingMarker 플러그인 코드를 직접 정의합니다.
-         * 외부 CDN 로드 실패로 인한 "is not a function" 에러를 완벽히 해결합니다.
+         * [오류 해결] MovingMarker 플러그인 소스를 직접 내장합니다.
+         * 외부 로드 실패로 인한 "L.movingMarker is not a function" 에러를 원천 차단합니다.
          */
-        L.interpolateLatLng = function (p1, p2, duration, t) {
-            var r = t / duration;
-            return L.latLng(p1.lat + (p2.lat - p1.lat) * r, p1.lng + (p2.lng - p1.lng) * r);
-        };
+        L.MovingMarker = L.Marker.extend({initialize:function(i,t,e){L.Marker.prototype.initialize.call(this,i[0],e),this._latlngs=i.map(function(i){return L.latLng(i)}),this._durations=t,this._currentDuration=0,this._currentIndex=0,this._state=0,this._startTime=0,this._pauseTime=0,this._animId=0},start:function(){if(1!==this._state){this._state=1,this._startTime=performance.now();var i=Array.isArray(this._durations)?this._durations[this._currentIndex]:this._durations/(this._latlngs.length-1);this._currentDuration=i,this._animate()}},pause:function(){1===this._state&&(this._state=2,this._pauseTime=performance.now(),cancelAnimationFrame(this._animId))},_animate:function(){var i=this,t=performance.now(),e=(t-this._startTime)/this._currentDuration;if(e>=1){if(this._currentIndex++,this._currentIndex>=this._latlngs.length-1)return this.setLatLng(this._latlngs[this._latlngs.length-1]),this._state=0,void this.fire("end");this._startTime=t,e=0;var s=Array.isArray(this._durations)?this._durations[this._currentIndex]:this._durations/(this._latlngs.length-1);this._currentDuration=s}var r=this._latlngs[this._currentIndex],n=this._latlngs[this._currentIndex+1],a=r.lat+(n.lat-r.lat)*e,o=r.lng+(n.lng-r.lng)*e;this.setLatLng([a,o]),this.fire("progress"),this._animId=requestAnimationFrame(function(){i._animate()})}});
+        L.movingMarker = function(i,t,e){return new L.MovingMarker(i,t,e)};
 
-        L.MovingMarker = L.Marker.extend({
-            initialize: function (latlngs, duration, options) {
-                L.Marker.prototype.initialize.call(this, latlngs[0], options);
-                this._latlngs = latlngs.map(function(e) { return L.latLng(e); });
-                this._duration = duration;
-                this._currentIndex = 0;
-                this._state = 0; // 0: Stopped, 1: Started, 2: Paused
-            },
-            onAdd: function (map) {
-                L.Marker.prototype.onAdd.call(this, map);
-                this._map = map;
-            },
-            start: function () {
-                if (this._state === 1) return;
-                this._state = 1;
-                this._startTime = Date.now();
-                this._startLatLng = this.getLatLng();
-                this._animate();
-            },
-            pause: function () {
-                this._state = 2;
-                L.Util.cancelAnimFrame(this._animId);
-            },
-            _animate: function () {
-                var self = this,
-                    now = Date.now(),
-                    t = now - self._startTime;
+        // 1. 지도 초기화
+        const map = L.map('map').setView([33.3617, 126.5292], 13);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { 
+            attribution: '© OpenStreetMap' 
+        }).addTo(map);
 
-                if (t >= self._duration / (self._latlngs.length - 1)) {
-                    self._currentIndex++;
-                    self._startTime = now;
-                    self._startLatLng = self._latlngs[self._currentIndex];
-                    if (self._currentIndex >= self._latlngs.length - 1) {
-                        self.setLatLng(self._latlngs[self._latlngs.length - 1]);
-                        self.fire('end');
-                        self._state = 0;
-                        return;
-                    }
+        let movingMarker;
+        const followCheckbox = document.getElementById('followMe');
+        const statusText = document.getElementById('status');
+
+        // 2. GPX 로드 (파일명이 실제와 일치해야 합니다)
+        const gpxFile = 'Hanllasan_20190605.gpx'; 
+
+        new L.GPX(gpxFile, {
+            async: true,
+            marker_options: {
+                startIconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+                endIconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+                shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png'
+            }
+        }).on('loaded', function(e) {
+            const gpx = e.target;
+            map.fitBounds(gpx.getBounds());
+            statusText.innerText = "로딩 완료";
+
+            // 상단 정보 패널 업데이트
+            document.getElementById('distance').innerText = (gpx.get_distance() / 1000).toFixed(2);
+            document.getElementById('elevation').innerText = gpx.get_elevation_max().toFixed(0);
+            document.getElementById('duration').innerText = gpx.get_duration_string(gpx.get_total_time());
+
+            // 모든 좌표 수집 (재귀적 탐색)
+            let allCoords = [];
+            function collectCoords(layer) {
+                if (layer instanceof L.Polyline) {
+                    allCoords = allCoords.concat(layer.getLatLngs());
+                } else if (layer.getLayers) {
+                    layer.getLayers().forEach(collectCoords);
                 }
+            }
+            collectCoords(gpx);
+            const flatCoords = allCoords.flat(Infinity);
+
+            if (flatCoords.length > 0) {
+                // MovingMarker 생성 (전체 경로를 30초 동안 이동)
+                movingMarker = L.movingMarker(flatCoords, 30000);
+
+                movingMarker.on('progress', function() {
+                    if (followCheckbox.checked) {
+                        map.panTo(movingMarker.getLatLng());
+                    }
+                });
+
+                movingMarker.on('end', function() {
+                    statusText.innerText = "도착 완료";
+                });
+
+                movingMarker.addTo(map);
+            }
+        }).on('error', function() {
+            statusText.innerText = "GPX 파일 로드 실패!";
+        }).addTo(map);
+
+        // 제어 함수
+        function startAnimation() {
+            if (movingMarker) {
+                movingMarker.start();
+                statusText.innerText = "이동 중...";
+            }
+        }
+
+        function pauseAnimation() {
+            if (movingMarker) {
+                movingMarker.pause();
+                statusText.innerText = "일시 정지";
+            }
+        }
+    </script>
+</body>
+</html>
