@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>한라산 GPX 추적기 (시작/종료 마커 구분)</title>
+    <title>한라산 GPX 애니메이션 추적기 (마커 제거 버전)</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     
@@ -51,19 +51,6 @@
         L.MovingMarker = L.Marker.extend({initialize:function(i,t,e){L.Marker.prototype.initialize.call(this,i[0],e),this._latlngs=i.map(function(i){return L.latLng(i)}),this._durations=t,this._currentDuration=0,this._currentIndex=0,this._state=0,this._startTime=0,this._pauseTime=0,this._animId=0},start:function(){if(1!==this._state){if(this._state===2){this._startTime+=performance.now()-this._pauseTime}else{this._startTime=performance.now()}this._state=1;var i=Array.isArray(this._durations)?this._durations[this._currentIndex]:this._durations/(this._latlngs.length-1);this._currentDuration=i,this._animate()}},pause:function(){1===this._state&&(this._state=2,this._pauseTime=performance.now(),cancelAnimationFrame(this._animId))},_animate:function(){var i=this,t=performance.now(),e=(t-this._startTime)/this._currentDuration;if(e>=1){if(this._currentIndex++,this._currentIndex>=this._latlngs.length-1)return this.setLatLng(this._latlngs[this._latlngs.length-1]),this._state=0,void this.fire("end");this._startTime=t,e=0;var s=Array.isArray(this._durations)?this._durations[this._currentIndex]:this._durations/(this._latlngs.length-1);this._currentDuration=s}var r=this._latlngs[this._currentIndex],n=this._latlngs[this._currentIndex+1],a=r.lat+(n.lat-r.lat)*e,o=r.lng+(n.lng-r.lng)*e;this.setLatLng([a,o]),this.fire("progress"),this._animId=requestAnimationFrame(function(){i._animate()})}});
         L.movingMarker = function(i,t,e){return new L.MovingMarker(i,t,e)};
 
-        // 아이콘 설정 (시작: 녹색, 종료: 적색)
-        const startIcon = new L.Icon({
-            iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
-            shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
-            iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41]
-        });
-
-        const endIcon = new L.Icon({
-            iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
-            shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
-            iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41]
-        });
-
         const map = L.map('map').setView([33.3617, 126.5292], 13);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(map);
 
@@ -76,12 +63,14 @@
 
         new L.GPX(gpxFile, {
             async: true,
+            // [수정] 마커 관련 옵션을 모두 비활성화하거나 빈 아이콘을 설정합니다.
             marker_options: {
-                startIconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
-                endIconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
-                shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
-                wptIconUrls: { '': null } // 중간 사진 마커 등은 제거
-            }
+                startIconUrl: null,
+                endIconUrl: null,
+                shadowUrl: null,
+                wptIconUrls: { '': null } // 웨이포인트(사진 포인트 등) 마커 제거
+            },
+            polyline_options: { color: 'blue', opacity: 0.6, weight: 4 }
         }).on('loaded', function(e) {
             const gpx = e.target;
             map.fitBounds(gpx.getBounds());
@@ -91,26 +80,37 @@
             document.getElementById('elevation').innerText = gpx.get_elevation_max().toFixed(0);
             document.getElementById('duration').innerText = gpx.get_duration_string(gpx.get_total_time());
 
+            // 경로 데이터만 추출
             gpx.eachLayer(function collect(layer) {
                 if (layer instanceof L.Polyline) {
                     routeCoords = routeCoords.concat(layer.getLatLngs());
+                } else if (layer.getLayers) {
+                    layer.getLayers().forEach(collect);
+                }
+                
+                // [추가] 만약 GPX 객체가 마커를 생성했다면 지도에서 즉시 제거
+                if (layer instanceof L.Marker && layer !== movingMarker) {
+                    gpx.removeLayer(layer);
                 }
             });
             routeCoords = routeCoords.flat(Infinity);
 
             createMovingMarker();
+        }).on('error', function() {
+            statusText.innerText = "파일 로드 실패!";
         }).addTo(map);
 
         function createMovingMarker() {
             if (movingMarker) map.removeLayer(movingMarker);
+            
             if (routeCoords.length > 0) {
-                // 움직이는 마커는 기본 파란색 유지
+                // 파란색 기본 마커로 생성 (원하는 경우 아이콘 커스텀 가능)
                 movingMarker = L.movingMarker(routeCoords, 30000); 
                 movingMarker.on('progress', function() {
                     if (followCheckbox.checked) map.panTo(movingMarker.getLatLng());
                 });
                 movingMarker.on('end', function() {
-                    statusText.innerText = "도착 완료";
+                    statusText.innerText = "도착 완료 (리셋 가능)";
                 });
                 movingMarker.addTo(map);
                 map.panTo(routeCoords[0]);
@@ -133,7 +133,7 @@
 
         function resetMarker() {
             createMovingMarker();
-            statusText.innerText = "준비 완료";
+            statusText.innerText = "준비 완료 (처음 위치)";
         }
     </script>
 </body>
