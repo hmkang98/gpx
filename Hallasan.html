@@ -1,200 +1,141 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>한라산 GPX + 속도 계기판</title>
-
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-
-<style>
-body { font-family: 'Malgun Gothic'; margin:20px; background:#f4f4f4; }
-#map { height:500px; border-radius:12px; }
-
-.controls { margin-top:10px; }
-button { padding:8px 15px; margin-right:5px; }
-
-.info-panel { margin-top:10px; display:flex; gap:15px; }
-
-/* 속도 계기판 */
-.speedometer {
-    margin-top:15px;
-    width:220px;
-    height:140px;
-    background:#111;
-    color:#0f0;
-    border-radius:12px;
-    display:flex;
-    flex-direction:column;
-    justify-content:center;
-    align-items:center;
-    box-shadow: inset 0 0 10px rgba(0,255,0,0.5);
-    font-family: monospace;
-}
-.speed-value {
-    font-size:36px;
-    font-weight:bold;
-}
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>한라산 GPX 애니메이션 추적기 (마커 제거 버전)</title>
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <style>
+        body { font-family: 'Malgun Gothic', sans-serif; margin: 20px; background: #f4f4f4; }
+        h2 { color: #333; }
+        #map { height: 500px; width: 100%; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); border: 1px solid #ddd; }
+        .controls { margin-top: 15px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+        button { padding: 10px 20px; border: none; border-radius: 5px; background: #007bff; color: white; cursor: pointer; font-weight: bold; }
+        button:hover { background: #0056b3; }
+        .btn-reset { background: #dc3545; }
+        .btn-reset:hover { background: #a71d2a; }
+        .info-panel { margin-top: 15px; padding: 15px; background: white; border-radius: 8px; border: 1px solid #ddd; display: flex; gap: 20px; }
+        .info-item { display: flex; flex-direction: column; }
+        .label { font-size: 12px; color: #666; }
+        .value { font-size: 18px; font-weight: bold; color: #222; }
+        #status { margin-left:10px; font-size:14px; color:#007bff; font-weight: bold; }
+    </style>
 </head>
-
 <body>
 
-<h2>📍 한라산 GPX + 속도 계기판</h2>
+    <h2>📍 한라산 경로 실시간 추적</h2>
 
-<div id="map"></div>
+    <div id="map"></div>
 
-<div class="controls">
-    <button onclick="startAnimation()">▶ 시작</button>
-    <button onclick="pauseAnimation()">⏸ 정지</button>
-    <button onclick="resetMarker()">🔄 리셋</button>
-</div>
+    <div class="controls">
+        <button onclick="startAnimation()">▶ 이동 시작</button>
+        <button onclick="pauseAnimation()" style="background:#6c757d;">⏸ 일시정지</button>
+        <button onclick="resetMarker()" class="btn-reset">🔄 처음으로 되돌리기</button>
+        <label><input type="checkbox" id="followMe" checked> 마커 따라가기</label>
+        <span id="status">GPX 로딩 중...</span>
+    </div>
 
-<div class="speedometer">
-    <div>현재 속도</div>
-    <div class="speed-value"><span id="speed">0</span> km/h</div>
-</div>
+    <div class="info-panel">
+        <div class="info-item"><span class="label">총 거리</span><span class="value"><span id="distance">0</span>km</span></div>
+        <div class="info-item"><span class="label">최고 고도</span><span class="value"><span id="elevation">0</span>m</span></div>
+        <div class="info-item"><span class="label">최소 고도</span><span class="value"><span id="min-elevation">0</span>m</span></div>
+        <div class="info-item"><span class="label">소요 시간</span><span class="value"><span id="duration">0</span></span></div>
+    </div>
 
-<div class="info-panel">
-    <div>거리: <span id="distance">0</span> km</div>
-    <div>최고고도: <span id="elevation">0</span> m</div>
-</div>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-gpx/1.7.0/gpx.min.js"></script>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-gpx/1.7.0/gpx.min.js"></script>
+    <script>
+        // MovingMarker 내장 소스
+        L.MovingMarker = L.Marker.extend({initialize:function(i,t,e){L.Marker.prototype.initialize.call(this,i[0],e),this._latlngs=i.map(function(i){return L.latLng(i)}),this._durations=t,this._currentDuration=0,this._currentIndex=0,this._state=0,this._startTime=0,this._pauseTime=0,this._animId=0},start:function(){if(1!==this._state){if(this._state===2){this._startTime+=performance.now()-this._pauseTime}else{this._startTime=performance.now()}this._state=1;var i=Array.isArray(this._durations)?this._durations[this._currentIndex]:this._durations/(this._latlngs.length-1);this._currentDuration=i,this._animate()}},pause:function(){1===this._state&&(this._state=2,this._pauseTime=performance.now(),cancelAnimationFrame(this._animId))},_animate:function(){var i=this,t=performance.now(),e=(t-this._startTime)/this._currentDuration;if(e>=1){if(this._currentIndex++,this._currentIndex>=this._latlngs.length-1)return this.setLatLng(this._latlngs[this._latlngs.length-1]),this._state=0,void this.fire("end");this._startTime=t,e=0;var s=Array.isArray(this._durations)?this._durations[this._currentIndex]:this._durations/(this._latlngs.length-1);this._currentDuration=s}var r=this._latlngs[this._currentIndex],n=this._latlngs[this._currentIndex+1],a=r.lat+(n.lat-r.lat)*e,o=r.lng+(n.lng-r.lng)*e;this.setLatLng([a,o]),this.fire("progress"),this._animId=requestAnimationFrame(function(){i._animate()})}});
+        L.movingMarker = function(i,t,e){return new L.MovingMarker(i,t,e)};
 
-<script>
-// MovingMarker
-L.MovingMarker = L.Marker.extend({
-initialize:function(i,t,e){
-L.Marker.prototype.initialize.call(this,i[0],e);
-this._latlngs=i.map(i=>L.latLng(i));
-this._durations=t;
-this._currentIndex=0;
-this._state=0;
-},
-start:function(){
-this._state=1;
-this._animate();
-},
-pause:function(){
-this._state=2;
-},
-_animate:function(){
-if(this._state!==1) return;
+        const map = L.map('map').setView([33.3617, 126.5292], 13);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(map);
 
-let i=this._currentIndex;
-if(i>=this._latlngs.length-1) return;
+        let movingMarker;
+        let routeCoords = []; 
+        const followCheckbox = document.getElementById('followMe');
+        const statusText = document.getElementById('status');
 
-let start=this._latlngs[i];
-let end=this._latlngs[i+1];
+        const gpxFile = 'Hanllasan_20190605.gpx'; 
 
-this.setLatLng(end);
-this._currentIndex++;
+        new L.GPX(gpxFile, {
+            async: true,
+            // [수정] 마커 관련 옵션을 모두 비활성화하거나 빈 아이콘을 설정합니다.
+            marker_options: {
+                startIconUrl: null,
+                endIconUrl: null,
+                shadowUrl: null,
+                wptIconUrls: { '': null } // 웨이포인트(사진 포인트 등) 마커 제거
+            },
+            polyline_options: { color: 'blue', opacity: 0.6, weight: 4 }
+        }).on('loaded', function(e) {
+            const gpx = e.target;
+            map.fitBounds(gpx.getBounds());
+            statusText.innerText = "로딩 완료";
 
-this.fire("progress");
+            document.getElementById('distance').innerText = (gpx.get_distance() / 1000).toFixed(2);
+            document.getElementById('elevation').innerText = gpx.get_elevation_max().toFixed(0);
+            document.getElementById('duration').innerText = gpx.get_duration_string(gpx.get_total_time());
+            document.getElementById('min-elevation').innerText = gpx.get_elevation_min().toFixed(0);
+            // 경로 데이터만 추출
+            gpx.eachLayer(function collect(layer) {
+                if (layer instanceof L.Polyline) {
+                    routeCoords = routeCoords.concat(layer.getLatLngs());
+                } else if (layer.getLayers) {
+                    layer.getLayers().forEach(collect);
+                }
+                
+                // [추가] 만약 GPX 객체가 마커를 생성했다면 지도에서 즉시 제거
+                if (layer instanceof L.Marker && layer !== movingMarker) {
+                    gpx.removeLayer(layer);
+                }
+            });
+            routeCoords = routeCoords.flat(Infinity);
 
-setTimeout(()=>this._animate(),30);
-}
-});
-L.movingMarker = (i,t,e)=> new L.MovingMarker(i,t,e);
+            createMovingMarker();
+        }).on('error', function() {
+            statusText.innerText = "파일 로드 실패!";
+        }).addTo(map);
 
-// 지도
-const map = L.map('map').setView([33.36,126.52],13);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+        function createMovingMarker() {
+            if (movingMarker) map.removeLayer(movingMarker);
+            
+            if (routeCoords.length > 0) {
+                // 파란색 기본 마커로 생성 (원하는 경우 아이콘 커스텀 가능)
+                movingMarker = L.movingMarker(routeCoords, 30000); 
+                movingMarker.on('progress', function() {
+                    if (followCheckbox.checked) map.panTo(movingMarker.getLatLng());
+                });
+                movingMarker.on('end', function() {
+                    statusText.innerText = "도착 완료 (리셋 가능)";
+                });
+                movingMarker.addTo(map);
+                map.panTo(routeCoords[0]);
+            }
+        }
 
-let movingMarker;
-let routeCoords=[];
+        function startAnimation() {
+            if (movingMarker) {
+                movingMarker.start();
+                statusText.innerText = "이동 중...";
+            }
+        }
 
-// 속도 계산 변수
-let lastLatLng=null;
-let lastTime=null;
+        function pauseAnimation() {
+            if (movingMarker) {
+                movingMarker.pause();
+                statusText.innerText = "일시 정지";
+            }
+        }
 
-// 거리 계산
-function getDistance(a,b){
-const R=6371000;
-const toRad=x=>x*Math.PI/180;
-
-const dLat=toRad(b.lat-a.lat);
-const dLng=toRad(b.lng-a.lng);
-
-const v=Math.sin(dLat/2)**2 +
-Math.cos(toRad(a.lat))*Math.cos(toRad(b.lat))*
-Math.sin(dLng/2)**2;
-
-return R*2*Math.atan2(Math.sqrt(v),Math.sqrt(1-v));
-}
-
-// GPX 로드
-new L.GPX("Hanllasan_20190605.gpx", {
-async:true,
-marker_options:{startIconUrl:null,endIconUrl:null}
-})
-.on('loaded', e=>{
-const gpx=e.target;
-
-map.fitBounds(gpx.getBounds());
-
-document.getElementById('distance').innerText =
-(gpx.get_distance()/1000).toFixed(2);
-
-document.getElementById('elevation').innerText =
-gpx.get_elevation_max().toFixed(0);
-
-// 좌표 추출
-gpx.eachLayer(layer=>{
-if(layer instanceof L.Polyline){
-routeCoords = routeCoords.concat(layer.getLatLngs());
-}
-});
-
-routeCoords = routeCoords.flat();
-
-createMarker();
-})
-.addTo(map);
-
-// 마커 생성
-function createMarker(){
-if(movingMarker) map.removeLayer(movingMarker);
-
-movingMarker = L.movingMarker(routeCoords,30000);
-
-movingMarker.on('progress',()=>{
-const current = movingMarker.getLatLng();
-const now = performance.now();
-
-if(lastLatLng && lastTime){
-const dist = getDistance(lastLatLng,current);
-const time = (now-lastTime)/1000;
-
-const speed = (dist/time)*3.6;
-document.getElementById('speed').innerText = speed.toFixed(1);
-}
-
-lastLatLng = current;
-lastTime = now;
-
-map.panTo(current);
-});
-
-movingMarker.addTo(map);
-}
-
-// 컨트롤
-function startAnimation(){
-movingMarker.start();
-}
-function pauseAnimation(){
-movingMarker.pause();
-}
-function resetMarker(){
-lastLatLng=null;
-lastTime=null;
-document.getElementById('speed').innerText="0";
-createMarker();
-}
-</script>
-
+        function resetMarker() {
+            createMovingMarker();
+            statusText.innerText = "준비 완료 (처음 위치)";
+        }
+    </script>
 </body>
 </html>
